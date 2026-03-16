@@ -96,6 +96,7 @@ def run():
         records=all_records,
     )
     print(f"Inserted/updated {inserted} fact_prices rows")
+    return inserted
 
 
 if __name__ == "__main__":

@@ -10,6 +10,18 @@ from db import upsert_prices, fetch_price_history
 st.set_page_config(page_title="Oil Data Scraper", page_icon="🛢️", layout="wide")
 st.title("🛢️ Oil Data Scraper")
 
+# Sidebar: run scrapers button (Neon fact_prices)
+st.sidebar.header("Scrapers")
+if st.sidebar.button("🔄 Run spot price scraper now", type="primary"):
+    try:
+        from spot_price_scraper import run as run_spot_scraper
+        with st.spinner("Fetching 10y of WTI/Brent/Heating Oil and saving to Neon…"):
+            inserted = run_spot_scraper()
+        st.sidebar.success(f"Done. Inserted/updated {inserted} rows.")
+    except Exception as e:
+        st.sidebar.error(f"Scraper failed: {e}")
+st.sidebar.caption("Writes to Neon fact_prices. May take 1–2 min.")
+
 live_tab, history_tab = st.tabs(["📈 Live market", "🗄️ Stored history (Neon)"])
 
 with live_tab:
