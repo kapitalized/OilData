@@ -247,7 +247,7 @@ def insert_fact_prices_with_log(
                 VALUES (%s, %s, %s, %s)
                 RETURNING log_id;
                 """,
-                (scraper_name, 0, "running", json.dumps(records)),
+                (scraper_name, 0, "running", json.dumps(records, default=str)),
             )
             log_id = cur.fetchone()[0]
 
