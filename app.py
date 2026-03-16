@@ -22,7 +22,7 @@ tickers = {k: OIL_TICKERS[k] for k in selected} if selected else OIL_TICKERS
 st.subheader("Latest prices")
 try:
     latest = get_latest_prices(tickers)
-    st.dataframe(latest, use_container_width=True, hide_index=True)
+    st.dataframe(latest, width="stretch", hide_index=True)
     # Persist latest snapshot to Neon (best-effort)
     try:
         upsert_prices(latest)
@@ -54,6 +54,6 @@ else:
             if not chart_df.empty:
                 st.line_chart(chart_df)
             with st.expander("View raw data"):
-                st.dataframe(df, use_container_width=True, hide_index=True)
+                st.dataframe(df, width="stretch", hide_index=True)
     except Exception as e:
         st.error(f"Error fetching historical data: {e}")
