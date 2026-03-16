@@ -23,8 +23,12 @@ fi
 echo "== Installing dependencies =="
 pip install -r requirements.txt
 
-echo "== Setting Neon connection string =="
-export NEON_DATABASE_URL="postgresql://neondb_owner:npg_tzx7mJyPqE0H@ep-patient-firefly-a82i7jrf-pooler.eastus2.azure.neon.tech/neondb?sslmode=require&channel_binding=require"
+echo "== Using NEON_DATABASE_URL from environment =="
+if [ -z "${NEON_DATABASE_URL:-}" ]; then
+  echo "WARNING: NEON_DATABASE_URL is not set. Neon writes will be disabled."
+else
+  echo "NEON_DATABASE_URL is set."
+fi
 
 echo "== Starting Streamlit app on port 8501 =="
 echo "   Visit: http://31.220.48.107:8501"

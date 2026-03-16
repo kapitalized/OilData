@@ -6,8 +6,9 @@ from __future__ import annotations
 import os
 from datetime import date
 
+import pandas as pd
 import psycopg2
-from psycopg2.extras import execute_batch
+from psycopg2.extras import execute_batch, RealDictCursor
 
 
 NEON_DATABASE_URL = os.environ.get("NEON_DATABASE_URL")
@@ -126,4 +127,34 @@ def upsert_prices(df) -> None:
                 """,
                 data_for_insert,
             )
+
+
+def fetch_price_history(limit: int = 500) -> pd.DataFrame:
+    """
+    Return recent price history from Neon joined with dim_oil_types.
+    """
+    with get_conn() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            _ensure_schema(cur)
+            cur.execute(
+                """
+                SELECT
+                    fp.price_date,
+                    dt.code AS symbol,
+                    dt.name AS name,
+                    fp.close_price,
+                    fp.change_percent,
+                    fp.src,
+                    fp.created_at
+                FROM fact_prices fp
+                JOIN dim_oil_types dt ON dt.id = fp.oil_type_id
+                ORDER BY fp.price_date DESC, dt.code
+                LIMIT %s;
+                """,
+                (limit,),
+            )
+            rows = cur.fetchall()
+    if not rows:
+        return pd.DataFrame()
+    return pd.DataFrame(rows)
 
