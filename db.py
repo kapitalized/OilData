@@ -23,12 +23,12 @@ def get_conn():
 
 def _ensure_schema(cur) -> None:
     """
-    Create minimal dim_oil_types and fact_prices tables if they don't exist.
+    Create minimal app tables if they don't exist.
     This is intentionally small and focused on yfinance price storage only.
     """
     cur.execute(
         """
-        CREATE TABLE IF NOT EXISTS dim_oil_types (
+        CREATE TABLE IF NOT EXISTS dim_oil_types_app (
             id          SERIAL PRIMARY KEY,
             code        TEXT UNIQUE NOT NULL,
             name        TEXT NOT NULL
@@ -37,9 +37,9 @@ def _ensure_schema(cur) -> None:
     )
     cur.execute(
         """
-        CREATE TABLE IF NOT EXISTS fact_prices (
+        CREATE TABLE IF NOT EXISTS fact_prices_app (
             id              BIGSERIAL PRIMARY KEY,
-            oil_type_id     INT NOT NULL REFERENCES dim_oil_types(id),
+            oil_type_id     INT NOT NULL REFERENCES dim_oil_types_app(id),
             price_date      DATE NOT NULL,
             close_price     NUMERIC(18, 6) NOT NULL,
             change_percent  NUMERIC(10, 4),
@@ -115,8 +115,8 @@ def upsert_prices(df) -> None:
         with conn.cursor() as cur:
             _ensure_schema(cur)
 
-            # Load existing oil types
-            cur.execute("SELECT code, id FROM dim_oil_types")
+            # Load existing oil types (app table)
+            cur.execute("SELECT code, id FROM dim_oil_types_app")
             existing = {code: oid for code, oid in cur.fetchall()}
 
             # Insert any new oil types we see
@@ -125,7 +125,7 @@ def upsert_prices(df) -> None:
                     continue
                 cur.execute(
                     """
-                    INSERT INTO dim_oil_types (code, name)
+                    INSERT INTO dim_oil_types_app (code, name)
                     VALUES (%s, %s)
                     ON CONFLICT (code) DO NOTHING
                     RETURNING id;
@@ -152,7 +152,7 @@ def upsert_prices(df) -> None:
             execute_batch(
                 cur,
                 """
-                INSERT INTO fact_prices (
+                INSERT INTO fact_prices_app (
                     oil_type_id,
                     price_date,
                     close_price,
@@ -183,8 +183,8 @@ def fetch_price_history(limit: int = 500) -> pd.DataFrame:
                     fp.change_percent,
                     fp.src,
                     fp.created_at
-                FROM fact_prices fp
-                JOIN dim_oil_types dt ON dt.id = fp.oil_type_id
+                FROM fact_prices_app fp
+                JOIN dim_oil_types_app dt ON dt.id = fp.oil_type_id
                 ORDER BY fp.price_date DESC, dt.code
                 LIMIT %s;
                 """,
