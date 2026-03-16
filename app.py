@@ -5,6 +5,7 @@ Run: streamlit run app.py
 import streamlit as st
 import pandas as pd
 from scraper import OIL_TICKERS, get_oil_data, get_latest_prices
+from db import upsert_prices
 
 st.set_page_config(page_title="Oil Data Scraper", page_icon="🛢️", layout="wide")
 st.title("🛢️ Oil Data Scraper")
@@ -22,6 +23,11 @@ st.subheader("Latest prices")
 try:
     latest = get_latest_prices(tickers)
     st.dataframe(latest, use_container_width=True, hide_index=True)
+    # Persist latest snapshot to Neon (best-effort)
+    try:
+        upsert_prices(latest)
+    except Exception as db_err:
+        st.warning(f"Could not save to Neon: {db_err}")
 except Exception as e:
     st.error(f"Error fetching latest prices: {e}")
 
