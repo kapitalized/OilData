@@ -65,6 +65,9 @@ def build_price_records(symbol: str, df) -> list[dict]:
         close_val = row.get("Close")
         if close_val is None:
             continue
+        # Handle potential single-element Series to avoid FutureWarning
+        if hasattr(close_val, "iloc"):
+            close_val = close_val.iloc[0]
         records.append(
             {
                 "oil_type_name": meta["oil_type_name"],
