@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import os
 from datetime import date
+import json
 
 import pandas as pd
 import psycopg2
@@ -45,6 +46,42 @@ def _ensure_schema(cur) -> None:
             src             TEXT NOT NULL,
             created_at      TIMESTAMPTZ DEFAULT now(),
             UNIQUE (oil_type_id, price_date, src)
+        );
+        """
+    )
+
+    # Ensure core analytical tables also exist (id-based dim_oil_types already matches Neon)
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS dim_countries (
+            iso_code     VARCHAR(3) PRIMARY KEY,
+            country_name TEXT NOT NULL,
+            region       TEXT
+        );
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS fact_prices (
+            price_id          SERIAL PRIMARY KEY,
+            oil_type_id       INTEGER REFERENCES dim_oil_types(id),
+            price_usd_per_bbl DECIMAL(10,2),
+            market_location   TEXT,
+            price_date        DATE NOT NULL,
+            UNIQUE (oil_type_id, price_date, market_location)
+        );
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS src_scraper_logs (
+            log_id           SERIAL PRIMARY KEY,
+            scraper_name     TEXT NOT NULL,
+            run_time         TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            rows_inserted    INTEGER,
+            status           TEXT,
+            error_message    TEXT,
+            raw_response_json JSONB
         );
         """
     )
@@ -157,4 +194,100 @@ def fetch_price_history(limit: int = 500) -> pd.DataFrame:
     if not rows:
         return pd.DataFrame()
     return pd.DataFrame(rows)
+
+
+def get_or_create_oil_type(name: str, code: str | None = None) -> int:
+    """
+    Helper for analytical dim_oil_types.
+    """
+    if not name:
+        raise ValueError("oil type name is required")
+    code = code or name.upper().replace(" ", "_")
+
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            _ensure_schema(cur)
+            cur.execute("SELECT id FROM dim_oil_types WHERE name = %s", (name,))
+            row = cur.fetchone()
+            if row:
+                return row[0]
+            cur.execute(
+                "INSERT INTO dim_oil_types (code, name) VALUES (%s, %s) RETURNING id;",
+                (code, name),
+            )
+            new_id = cur.fetchone()[0]
+    return new_id
+
+
+def insert_fact_prices_with_log(
+    scraper_name: str,
+    src_url: str,
+    records: list[dict],
+) -> int:
+    """
+    Insert a batch of analytical price records and create a scraper log.
+
+    Each record dict must have:
+      - oil_type_name
+      - oil_type_code (optional)
+      - market_location
+      - price_date (datetime.date)
+      - price_usd_per_bbl
+    """
+    if not records:
+        return 0
+
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            _ensure_schema(cur)
+
+            cur.execute(
+                """
+                INSERT INTO src_scraper_logs (scraper_name, rows_inserted, status, raw_response_json)
+                VALUES (%s, %s, %s, %s)
+                RETURNING log_id;
+                """,
+                (scraper_name, 0, "running", json.dumps(records)),
+            )
+            log_id = cur.fetchone()[0]
+
+            inserted = 0
+            for rec in records:
+                oil_type_name = rec["oil_type_name"]
+                oil_type_code = rec.get("oil_type_code")
+                market_location = rec.get("market_location")
+                price_date = rec["price_date"]
+                price = rec["price_usd_per_bbl"]
+
+                oil_type_id = get_or_create_oil_type(
+                    name=oil_type_name,
+                    code=oil_type_code,
+                )
+
+                cur.execute(
+                    """
+                    INSERT INTO fact_prices (
+                        oil_type_id,
+                        price_usd_per_bbl,
+                        market_location,
+                        price_date
+                    )
+                    VALUES (%s, %s, %s, %s)
+                    ON CONFLICT (oil_type_id, price_date, market_location)
+                    DO UPDATE SET price_usd_per_bbl = EXCLUDED.price_usd_per_bbl;
+                    """,
+                    (oil_type_id, price, market_location, price_date),
+                )
+                inserted += 1
+
+            cur.execute(
+                """
+                UPDATE src_scraper_logs
+                SET rows_inserted = %s, status = %s
+                WHERE log_id = %s;
+                """,
+                (inserted, "success", log_id),
+            )
+
+    return inserted
 
